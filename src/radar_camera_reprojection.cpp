@@ -64,21 +64,26 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
 
     geometry_msgs::TransformStamped transformStamped;
     Eigen::Affine3f tr_out;
+    float theta = M_PI;
+    Eigen::Affine3f transform_2 = Eigen::Affine3f::Identity();
     try {
         transformStamped = tf_buffer_.lookupTransform("camera_1_link", "oculli_link", 
                                                         ros::Time::now(), ros::Duration(1.0));
         const auto &t = transformStamped.transform.translation;
         const auto &q = transformStamped.transform.rotation;
         tr_out = Eigen::Translation3f(t.x, t.y, t.z) * Eigen::Quaternionf(q.w, q.x, q.y, q.z);
-        // tr_out = Eigen::Translation3f(0, 0, tr_out.translation().z()) * tr_out.rotation();
-        // tr_out = Eigen::Affine3f::Identity() * 
-        //             Eigen::Translation3f(tr_out.translation().x(), tr_out.translation().y(), 0);
+
+        
+        transform_2.translation() << t.x, t.y, t.z;
+        transform_2.rotate(Eigen::AngleAxisf (theta, Eigen::Vector3f::UnitX()));
+        std::cout << "here" << std::endl;
     }
     catch (tf2::TransformException &ex) {
         printf("TF Query Failed %s -> %s\n", "camera_1_link", "oculli_link");
     }
 
-    pcl::transformPointCloud(*appended_cloud, *appended_cloud, tr_out);
+    //pcl::transformPointCloud(*appended_cloud, *appended_cloud, tr_out);
+    pcl::transformPointCloud(*appended_cloud, *appended_cloud, transform_2);
 
     cv_bridge::CvImagePtr cv_ptr;
     try {
