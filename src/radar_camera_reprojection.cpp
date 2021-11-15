@@ -52,7 +52,7 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
     pcl::fromROSMsg(*pcl_msg, *cloud_msg);
 
     for (auto& point : *cloud_msg) {
-        for (double i = 0.0; i < 1.3; i += 0.1) { // -0.85 < 0.3
+        for (double i = 0.0; i < 1.1; i += 0.1) { // -0.85 < 0.3
             pcl::PointXYZI pt;
             pt.x = point.x;
             pt.y = point.y;
@@ -66,10 +66,13 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
     Eigen::Affine3f tr_out;
     try {
         transformStamped = tf_buffer_.lookupTransform("camera_1_link", "oculli_link", 
-                                                        tf2::timeFromSec(0.), tf2::durationFromSec(1.0));
+                                                        ros::Time::now(), ros::Duration(1.0));
         const auto &t = transformStamped.transform.translation;
         const auto &q = transformStamped.transform.rotation;
         tr_out = Eigen::Translation3f(t.x, t.y, t.z) * Eigen::Quaternionf(q.w, q.x, q.y, q.z);
+        // tr_out = Eigen::Translation3f(0, 0, tr_out.translation().z()) * tr_out.rotation();
+        // tr_out = Eigen::Affine3f::Identity() * 
+        //             Eigen::Translation3f(tr_out.translation().x(), tr_out.translation().y(), 0);
     }
     catch (tf2::TransformException &ex) {
         printf("TF Query Failed %s -> %s\n", "camera_1_link", "oculli_link");
@@ -104,16 +107,16 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
     //std::cout << "filtered cloud size: " << cloud_filtered->points.size() << std::endl;
 
     if (appended_cloud->points.size()) {
-        for (auto& point : *appended_cloud) {
-            for (double i = 0.0; i < 1.3; i += 0.1) { // -0.85 < 0.3
-                pcl::PointXYZI pt;
-                pt.x = point.x;
-                pt.y = point.y;
-                pt.z = i;
-                pt.intensity = point.intensity;
-                appended_cloud->points.push_back(pt);
-            }
-        }
+        // for (auto& point : *appended_cloud) {
+        //     for (double i = 0.0; i < 1.1; i += 0.1) { // -0.85 < 0.3
+        //         pcl::PointXYZI pt;
+        //         pt.x = point.x;
+        //         pt.y = point.y;
+        //         pt.z = i;
+        //         pt.intensity = point.intensity;
+        //         appended_cloud->points.push_back(pt);
+        //     }
+        // }
 
         std::cout << "new cloud size: " << appended_cloud->points.size() << std::endl;
 
