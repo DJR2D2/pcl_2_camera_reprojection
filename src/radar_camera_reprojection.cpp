@@ -37,6 +37,9 @@ Reprojection::Reprojection()
     cam_radar_img_pub_ = it_.advertise("radar_camera_img", 1);
     pcl_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("pcl", 1);
 
+    global_pcl_ = boost::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
+
+
     std::cout << "init complete" << std::endl;  
 }
 
@@ -49,43 +52,34 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
     // auto cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
     auto cloud_msg = boost::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
     auto cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
+    auto appended_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
+
+
 
     geometry_msgs::TransformStamped tf;
+    geometry_msgs::TransformStamped tf_radar;
     tf = tf_buffer_.lookupTransform("camera_1_link", "oculli_link",
                                     ros::Time::now(),
                                     ros::Duration(1.0));
+    // tf_radar = tf_buffer_.lookupTransform("odom", "oculli_link",
+    //                                 ros::Time::now(),
+    //                                 ros::Duration(1.0));
 
+    tf_radar = tf_buffer_.lookupTransform("odom", "oculli_link",
+                                    ros::Time::now(),
+                                    ros::Duration(1.0));
 
-    // sensor_msgs::PointCloud2 appended_pcl;
-    // for (auto& point: *pcl_msg) {
-    //     for (double i = 0.0; i < 1.0; i += 0.1) { // -0.85 < 0.3
-    //         pcl::PointXYZI pt;
-    //         pt.x = point.x;
-    //         pt.y = point.y;
-    //         pt.z = i;
-    //         pt.intensity = point.intensity;
-    //         appended_pcl.points.push_back(pt);
-    //     }
-    // }
+    // sensor_msgs::PointCloud2 pcl_tf;
+    //tf2::doTransform(*pcl_msg, pcl_tf, tf_radar);
 
     sensor_msgs::PointCloud2 cloud_tf;
     tf2::doTransform(*pcl_msg, cloud_tf, tf);
+    //tf2::doTransform(pcl_tf, cloud_tf, tf);
     pcl::fromROSMsg(cloud_tf, *cloud_msg);
 
     // tf2::doTransform(appended_pcl, cloud_tf, tf_msg);
     // pcl::fromROSMsg(cloud_tf, appended_pcl);
 
-    for (auto& point : *cloud_msg) {
-        for (double i = 0.0; i < 1.3; i += 0.1) { // -0.85 < 0.3
-            pcl::PointXYZI pt;
-            pt.x = point.x;
-            pt.y = point.y;
-            pt.z = i;
-            pt.intensity = point.intensity;
-            cloud_filtered->points.push_back(pt);
-        }
-        //cloud_filtered->erase(po);
-    }
 
     cv_bridge::CvImagePtr cv_ptr;
     try {
@@ -103,32 +97,81 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
     pcl::PassThrough<pcl::PointXYZI> pass;
     pass.setInputCloud(cloud_msg);
     pass.setFilterFieldName ("x");
-    pass.setFilterLimits (2.0, 30.0);
+    pass.setFilterLimits (2.0, 50.0);
     pass.filter (*cloud_filtered);
 
     pass.setInputCloud(cloud_filtered);
     pass.setFilterFieldName ("y");
-    pass.setFilterLimits (-3.0, 3.0);
+    pass.setFilterLimits (-2.0, 2.0);
     pass.filter (*cloud_filtered);
 
-    //std::cout << "filtered cloud size: " << cloud_filtered->points.size() << std::endl;
+    std::cout << "filtered cloud size: " << cloud_filtered->points.size() << std::endl;
 
+    auto left_hist = make_histogram(axis::regular<>(10, 0.0, 2.0));
+    auto right_hist = make_histogram(axis::regular<>(10, -2.0, 0.0));
+
+    double rcs_min {100.0};
+    double rcs_max {-100.0};
     if (cloud_filtered->points.size()) {
         for (auto& point : *cloud_filtered) {
-            for (double i = 0.0; i < 1.3; i += 0.1) { // -0.85 < 0.3
-                pcl::PointXYZI pt;
-                pt.x = point.x;
-                pt.y = point.y;
-                pt.z = i;
-                pt.intensity = point.intensity;
-                cloud_filtered->points.push_back(pt);
-            }
-            //cloud_filtered->erase(po);
+            left_hist(point.y);
+            right_hist(point.y);
         }
 
-        std::cout << "new cloud size: " << cloud_filtered->points.size() << std::endl;
+        size_t left_lar_bin {0};
+        size_t right_lar_bin {0};
+        auto left_bin_max {0.};
+        auto left_bin_min {0.};
+        auto right_bin_max {0.};
+        auto right_bin_min {0.};
+        for (auto&& x : indexed(left_hist)) {
+            if (*x > left_lar_bin) {
+                left_lar_bin = *x;
+                left_bin_max = x.bin().upper();
+                left_bin_min = x.bin().lower();             
+            }
+            std::cout << boost::format("bin %i [ %.1f, %.1f ): %i\n")
+                % x.index() % x.bin().lower() % x.bin().upper() % *x;
+        }
+        std::cout << std::flush;
 
-        for (pcl::PointCloud<pcl::PointXYZI>::const_iterator it = cloud_filtered->begin(); it != cloud_filtered->end(); it++) {
+        for (auto&& x : indexed(right_hist)) {
+            if (*x > right_lar_bin) {
+                right_lar_bin = *x;
+                right_bin_max = x.bin().upper();
+                right_bin_min = x.bin().lower();             
+            }
+            std::cout << boost::format("bin %i [ %.1f, %.1f ): %i\n")
+                % x.index() % x.bin().lower() % x.bin().upper() % *x;
+        }
+        std::cout << std::flush;
+
+        std::cout << "points in left largest bin : " << left_lar_bin << std::endl;
+        std::cout << "points in right largest bin: " << right_lar_bin << std::endl;
+
+
+        for (auto& point : *cloud_filtered) {
+            if ((point.y >= left_bin_min && point.y <= left_bin_max) || (point.y >= right_bin_min && point.y <= right_bin_max)) {
+                for (double i = -0.856; i < 0.65; i += 0.1) { // -0.856 < 0.29
+                    pcl::PointXYZI pt;
+                    pt.x = point.x;
+                    pt.y = point.y;
+                    pt.z = i;
+                    pt.intensity = point.intensity;
+                    appended_cloud->points.push_back(pt);
+                    // global_pcl_->points.push_back(pt);
+                    rcs_min = (pt.intensity < rcs_min) ? pt.intensity : rcs_min;
+                    rcs_max = (pt.intensity > rcs_max) ? pt.intensity : rcs_max;
+                }
+            }
+        }
+
+        std::cout << "rcs_max = " << rcs_max << std::endl;
+        std::cout << "rcs_min = " << rcs_min << std::endl;
+
+        std::cout << "new cloud size: " << cloud_filtered->points.size() << std::endl;
+        for (pcl::PointCloud<pcl::PointXYZI>::const_iterator it = appended_cloud->begin(); it != appended_cloud->end(); it++) {
+        // for (pcl::PointCloud<pcl::PointXYZI>::const_iterator it = global_pcl_->begin(); it != global_pcl_->end(); it++) {
             double tmpxC = (it->y * -1) / it->x;
             double tmpyC = (it->z * -1) / it->x;
             double tmpzC = it->x;
@@ -138,7 +181,11 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
             // double tmpzC = it->z;
             double dis = pow(it->x * it->x + it->y * it->y + it->z * it->z, 0.5);
             cv::Point2d planepointsC;
-            int range = std::min(round((dis / 30.0) * 49), 49.0);
+            // int range = std::min(round((dis / 30.0) * 49), 49.0);
+
+
+            int range = std::min(round((abs(it->intensity) / abs(rcs_max - rcs_min)) * 49), 49.0);
+            std::cout << "range = " << range << std::endl;
 
             // Applying the distortion
             double r2 = tmpxC * tmpxC + tmpyC * tmpyC;
@@ -159,13 +206,13 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
             // std::cout << "radar pt [x,y,z]: [" << it->x << "," << it->y << "," << it->z << "] ---> ";
             // std::cout << "point position [x,y]: [" << planepointsC.x << "," << planepointsC.y << "]"<< std::endl;  
             // std::cout << "tmpxC: " << tmpxC << std::endl;
-            std::cout << "point rcs: " << it->intensity << std::endl;
+            // std::cout << "point rcs: " << it->intensity << std::endl;
             
 
             if (planepointsC.y >= 0 and planepointsC.y < height and planepointsC.x >= 0 and planepointsC.x < width and
                 tmpzC >= 0 and std::abs(tmpxC) <= 1.35) {
 
-                int point_size = 8;
+                int point_size = 4;
                 cv::circle(cv_ptr->image,
                     cv::Point(planepointsC.x, planepointsC.y), point_size,
                     CV_RGB(255 * colmap[50-range][0], 255 * colmap[50-range][1], 255 * colmap[50-range][2]), -1);
@@ -190,7 +237,10 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
 
     cam_radar_img_pub_.publish(cv_ptr->toImageMsg());
 
-    pcl_pub_.publish(pcl_msg);
+    sensor_msgs::PointCloud2 pcl_tf;
+    tf2::doTransform(*pcl_msg, pcl_tf, tf_radar);
+    pcl_tf.header = pcl_msg->header;
+    pcl_pub_.publish(pcl_tf);
     std::cout << std::endl;
 
 }

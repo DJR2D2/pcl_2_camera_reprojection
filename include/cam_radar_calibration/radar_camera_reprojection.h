@@ -47,6 +47,11 @@
 #include "pcl_ros/transforms.h"
 #include "pcl_ros/impl/transforms.hpp"
 
+#include <boost/histogram.hpp>
+#include <boost/format.hpp>
+
+using namespace boost::histogram;
+
 double colmap[50][3]={{0,0,0.5385},{0,0,0.6154},{0,0,0.6923},{0,0,0.7692},{0,0,0.8462},{0,0,0.9231},{0,0,1.0000},{0,0.0769,1.0000},{0,0.1538,1.0000},{0,0.2308,1.0000},{0,0.3846,1.0000},
                       {0,0.4615,1.0000},{0,0.5385,1.0000},{0,0.6154,1.0000},{0,0.6923,1.0000},{0,0.7692,1.0000},{0,0.8462,1.0000},{0,0.9231,1.0000},{0,1.0000,1.0000},{0.0769,1.0000,0.9231},
                       {0.1538,1.0000,0.8462},{0.2308,1.0000,0.7692},{0.3077,1.0000,0.6923},{0.3846,1.0000,0.6154},{0.4615,1.0000,0.5385},{0.5385,1.0000,0.4615},{0.6154,1.0000,0.3846},
@@ -136,6 +141,7 @@ public:
     typedef boost::shared_ptr< ::sensor_msgs::Image const> ImgConstPtr;
     typedef boost::shared_ptr< ::sensor_msgs::PointCloud2 const> PclConstPtr;
 
+    // function prototypes
     void syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_msg);
     void paramsCallback(const std_msgs::Float64MultiArray::ConstPtr &msg);
 
@@ -164,6 +170,8 @@ private:
     std::vector<OptimisationSample> sample_list_;
     geometry_msgs::TransformStamped tf_msg;
     RotationTranslation rot_trans;
+
+    pcl::PointCloud<pcl::PointXYZI>::Ptr global_pcl_;
 
     std::string distortion_model;
     std::vector<double> K, D;
