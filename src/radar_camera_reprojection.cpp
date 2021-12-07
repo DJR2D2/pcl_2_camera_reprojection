@@ -117,6 +117,8 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
             right_hist(point.y);
         }
 
+        PtTParams t_p;
+
         size_t left_lar_bin {0};
         size_t right_lar_bin {0};
         auto left_bin_max {0.};
@@ -210,6 +212,9 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
 
             if (planepointsC.y >= 0 and planepointsC.y < height and planepointsC.x >= 0 and planepointsC.x < width and
                 tmpzC >= 0 and std::abs(tmpxC) <= 1.35) {
+                
+                t_p.points_vec.push_back(planepointsC);
+                t_p.range_vec.push_back(range);
 
                 int point_size = 4;
                 cv::circle(image,
@@ -220,6 +225,20 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
                     CV_RGB(255 * colmap[50-range][0], 255 * colmap[50-range][1], 255 * colmap[50-range][2]), -1);
             }
         }
+
+        if (transform_params_.size() != 0) {
+            Mat lambda(2, 4, CV_32FC1);
+            lambda = featureDetector(image_buf_, cv_ptr->image);
+
+            for (size_t i = 0; i < pt_buf_.size(); i++)
+                cv::warpPerspective(pt_buf_[i], pt_buf_[i], lambda, pt_buf_[i].size());
+        }
+
+        image_buf_ = cv_ptr->image;
+        transform_params_.push_back(t_p);
+        if (transform_params_.size() > 10)
+            transform_params_.pop_front();
+
         std::cout << "image type: " << image.type() << std::endl;
         cv::Mat temp_img;
         // cv::addWeighted(image, 0.5, pt_image, 0.5, 0.0, temp_img);

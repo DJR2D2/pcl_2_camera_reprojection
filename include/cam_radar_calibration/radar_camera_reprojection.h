@@ -114,7 +114,7 @@ struct Rotation
 struct PtTParams // params for point perspective transforms
 {
     std::vector<cv::Point2d> points_vec;
-    int range;
+    std::vector<int> range_vec;
 };
 
 struct RotationTranslation
@@ -185,7 +185,7 @@ private:
     std::vector<OptimisationSample> sample_list_;
     geometry_msgs::TransformStamped tf_msg;
     RotationTranslation rot_trans;
-    PtTParams pt_trans_params;
+    std::deque<PtTParams> transform_params_;
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr global_pcl_;
     std::deque<cv::Mat> pt_buf_;
