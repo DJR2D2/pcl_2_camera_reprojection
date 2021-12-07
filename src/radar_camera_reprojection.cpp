@@ -39,7 +39,6 @@ Reprojection::Reprojection()
 
     global_pcl_ = boost::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
 
-
     std::cout << "init complete" << std::endl;  
 }
 
@@ -53,8 +52,6 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
     auto cloud_msg = boost::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
     auto cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
     auto appended_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
-
-
 
     geometry_msgs::TransformStamped tf;
     geometry_msgs::TransformStamped tf_radar;
@@ -81,7 +78,8 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
     // pcl::fromROSMsg(cloud_tf, appended_pcl);
 
 
-    cv_bridge::CvImagePtr cv_ptr;
+    cv_bridge::CvImagePtr cv_ptr;//, cv_img_pub;
+    cv_bridge::CvImage cv_img_pub;
     try {
         cv_ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::BGR8);
     }
@@ -91,6 +89,7 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
     }
 
     cv::Mat image = cv_ptr->image;
+    cv::Mat pt_image(image.rows, image.cols, CV_8UC3);
 
     std::cout << "cloud size: " << cloud_msg->points.size() << std::endl;
 
@@ -213,29 +212,37 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
                 tmpzC >= 0 and std::abs(tmpxC) <= 1.35) {
 
                 int point_size = 4;
-                cv::circle(cv_ptr->image,
+                cv::circle(image,
+                    cv::Point(planepointsC.x, planepointsC.y), point_size,
+                    CV_RGB(255 * colmap[50-range][0], 255 * colmap[50-range][1], 255 * colmap[50-range][2]), -1);
+                cv::circle(pt_image,
                     cv::Point(planepointsC.x, planepointsC.y), point_size,
                     CV_RGB(255 * colmap[50-range][0], 255 * colmap[50-range][1], 255 * colmap[50-range][2]), -1);
             }
-            // cv::circle(cv_ptr->image,
-            //         cv::Point(350, 50), 10,
-            //         CV_RGB(230, 16, 194), -1);
         }
-    }
-    // ROS_INFO_STREAM("Projecting points onto image for pose #" << (visualise_pose_num));
-    // compute_reprojection(sample_list[visualise_pose_num-1], cam_project, lidar_project);
-    // for (auto& point : cam_project)
-    // {
-    //     cv::circle(image, point, 15, CV_RGB(0, 255, 0), 2);
-    //     cv::drawMarker(image, point, CV_RGB(0,255,0), cv::MARKER_CROSS, 25, 2, cv::LINE_8);
-    // }
-    // for (auto& point : lidar_project)
-    // {
-    //     cv::circle(image, point, 15, CV_RGB(255, 255, 0), 2);
-    //     cv::drawMarker(image, point, CV_RGB(255,255,0), cv::MARKER_TILTED_CROSS, 20, 2, cv::LINE_8);
-    // }
+        std::cout << "image type: " << image.type() << std::endl;
+        cv::Mat temp_img;
+        // cv::addWeighted(image, 0.5, pt_image, 0.5, 0.0, temp_img);
 
-    cam_radar_img_pub_.publish(cv_ptr->toImageMsg());
+        if (pt_buf_.size() != 0) {
+            Mat lambda(2, 4, CV_32FC1);
+            lambda = featureDetector(image_buf_, cv_ptr->image);
+
+            for (size_t i = 0; i < pt_buf_.size(); i++) {
+                cv::warpPerspective(pt_buf_[i], pt_buf_[i], lambda, pt_buf_[i].size());
+                cv::addWeighted(temp_img, 0.5, pt_buf_[i], 0.5, 0.0, temp_img);
+            }
+        }
+
+        image_buf_ = cv_ptr->image;
+        pt_buf_.push_back(pt_image);
+        if (pt_buf_.size() > 10)
+            pt_buf_.pop_front();
+
+        cv_img_pub = cv_bridge::CvImage(pcl_msg->header, sensor_msgs::image_encodings::RGB8, temp_img);
+    }
+
+    cam_radar_img_pub_.publish(cv_img_pub.toImageMsg());
 
     sensor_msgs::PointCloud2 pcl_tf;
     tf2::doTransform(*pcl_msg, pcl_tf, tf_radar);
@@ -282,6 +289,79 @@ Reprojection::paramsCallback(const std_msgs::Float64MultiArray::ConstPtr &msg)
     rot_trans.rot.pitch = p_val;
     rot_trans.rot.yaw = y_val;
 }
+
+cv::Mat
+Reprojection::featureDetector(cv::Mat img_1, cv::Mat img_2)
+{
+    std::vector<KeyPoint> keypoints_1, keypoints_2;
+    Mat descriptors_1, descriptors_2;
+    Ptr<FeatureDetector> detector = ORB::create();
+    Ptr<DescriptorExtractor> descriptor = ORB::create();
+    
+    Ptr<DescriptorMatcher> matcher  = DescriptorMatcher::create("BruteForce-Hamming");
+
+
+    detector->detect(img_1,keypoints_1);
+    detector->detect(img_2,keypoints_2);
+
+
+    descriptor->compute(img_1, keypoints_1, descriptors_1);
+    descriptor->compute(img_2, keypoints_2, descriptors_2);
+
+    Mat outimg1;
+    drawKeypoints(img_1, keypoints_1, outimg1, Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+    // imshow("ORB特征点",outimg1);
+
+
+    vector<DMatch> matches;
+    //BFMatcher matcher ( NORM_HAMMING );
+    matcher->match (descriptors_1, descriptors_2, matches);
+
+    double min_dist=10000, max_dist=0;
+
+    for (int i = 0; i < descriptors_1.rows; i++)
+    {
+        double dist = matches[i].distance;
+        if (dist < min_dist) min_dist = dist;
+        if (dist > max_dist) max_dist = dist;
+    }
+
+    printf ( "-- Max dist : %f \n", max_dist );
+    printf ( "-- Min dist : %f \n", min_dist );
+
+    std::vector< DMatch > good_matches;
+    for (int i = 0; i < descriptors_1.rows; i++)
+    {
+        if ( matches[i].distance <= max(2*min_dist, 30.0))
+        {
+            good_matches.push_back(matches[i]);
+        }
+    }
+
+    Point2f img1_pts[good_matches.size()];
+    Point2f img2_pts[good_matches.size()];
+
+    Mat lambda(2, 4, CV_32FC1);
+    lambda = Mat::zeros(img_1.rows, img_1.cols, img_1.type());
+
+    for(size_t i = 0; i < good_matches.size(); i++) {
+        img1_pts[0] = Point2f(keypoints_1.at(good_matches[i].queryIdx).pt.x, keypoints_1.at(good_matches[i].queryIdx).pt.y);
+        img2_pts[0] = Point2f(keypoints_2.at(good_matches[i].trainIdx).pt.x, keypoints_2.at(good_matches[i].trainIdx).pt.y);
+    }
+
+    lambda = getPerspectiveTransform(img1_pts, img2_pts);
+
+    Mat img_match;
+    Mat img_goodmatch;
+    drawMatches ( img_1, keypoints_1, img_2, keypoints_2, matches, img_match );
+    drawMatches ( img_1, keypoints_1, img_2, keypoints_2, good_matches, img_goodmatch );
+    // imshow ( "img_match", img_match );
+    // imshow ( "img_goodmatch", img_goodmatch );
+    // waitKey(0);
+    return lambda;
+}
+
+
 
 int 
 main(int argc, char **argv)

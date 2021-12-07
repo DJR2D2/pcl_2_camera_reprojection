@@ -26,6 +26,11 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/calib3d.hpp>
 
+#include <opencv2/core/core.hpp>
+#include <opencv2/features2d/features2d.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/opencv.hpp>
+
 #include <pcl_ros/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <tf_conversions/tf_eigen.h>
@@ -36,6 +41,7 @@
 #include <string>
 #include <numeric>
 #include <vector>
+#include <deque>
 
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -51,6 +57,8 @@
 #include <boost/format.hpp>
 
 using namespace boost::histogram;
+using namespace std;
+using namespace cv;
 
 double colmap[50][3]={{0,0,0.5385},{0,0,0.6154},{0,0,0.6923},{0,0,0.7692},{0,0,0.8462},{0,0,0.9231},{0,0,1.0000},{0,0.0769,1.0000},{0,0.1538,1.0000},{0,0.2308,1.0000},{0,0.3846,1.0000},
                       {0,0.4615,1.0000},{0,0.5385,1.0000},{0,0.6154,1.0000},{0,0.6923,1.0000},{0,0.7692,1.0000},{0,0.8462,1.0000},{0,0.9231,1.0000},{0,1.0000,1.0000},{0.0769,1.0000,0.9231},
@@ -103,6 +111,12 @@ struct Rotation
     }
 };
 
+struct PtTParams // params for point perspective transforms
+{
+    std::vector<cv::Point2d> points_vec;
+    int range;
+};
+
 struct RotationTranslation
 {
     Rotation rot;
@@ -144,6 +158,7 @@ public:
     // function prototypes
     void syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_msg);
     void paramsCallback(const std_msgs::Float64MultiArray::ConstPtr &msg);
+    cv::Mat featureDetector(cv::Mat img_1, cv::Mat img_2);
 
     std::vector<double> params_; 
 
@@ -170,8 +185,11 @@ private:
     std::vector<OptimisationSample> sample_list_;
     geometry_msgs::TransformStamped tf_msg;
     RotationTranslation rot_trans;
+    PtTParams pt_trans_params;
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr global_pcl_;
+    std::deque<cv::Mat> pt_buf_;
+    cv::Mat image_buf_;
 
     std::string distortion_model;
     std::vector<double> K, D;
