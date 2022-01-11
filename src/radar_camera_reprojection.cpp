@@ -47,37 +47,27 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
 {
     std::cout << "image timestamp: " << img_msg->header.stamp << std::endl;
     std::cout << "pcl timestamp  : " << pcl_msg->header.stamp << std::endl;
-    // auto cloud_msg = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-    // auto cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+
     auto cloud_msg = boost::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
     auto cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
     auto appended_cloud = boost::make_shared<pcl::PointCloud<pcl::PointXYZI>>();
 
+    // ######### Static Transforms ###########
     geometry_msgs::TransformStamped tf;
     geometry_msgs::TransformStamped tf_radar;
     tf = tf_buffer_.lookupTransform("camera_1_link", "oculli_link",
                                     ros::Time::now(),
                                     ros::Duration(1.0));
-    // tf_radar = tf_buffer_.lookupTransform("odom", "oculli_link",
-    //                                 ros::Time::now(),
-    //                                 ros::Duration(1.0));
 
-    tf_radar = tf_buffer_.lookupTransform("odom", "oculli_link",
+    tf_radar = tf_buffer_.lookupTransform("odom", "oculli_link", // this is only needed for viewing the radar pcl in reference to odom.
                                     ros::Time::now(),
                                     ros::Duration(1.0));
 
-    // sensor_msgs::PointCloud2 pcl_tf;
-    //tf2::doTransform(*pcl_msg, pcl_tf, tf_radar);
-
     sensor_msgs::PointCloud2 cloud_tf;
     tf2::doTransform(*pcl_msg, cloud_tf, tf);
-    //tf2::doTransform(pcl_tf, cloud_tf, tf);
     pcl::fromROSMsg(cloud_tf, *cloud_msg);
 
-    // tf2::doTransform(appended_pcl, cloud_tf, tf_msg);
-    // pcl::fromROSMsg(cloud_tf, appended_pcl);
-
-
+    // ######### Get Perspective Transform #############
     cv_bridge::CvImagePtr cv_ptr;//, cv_img_pub;
     cv_bridge::CvImage cv_img_pub;
     try {
@@ -89,8 +79,14 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
     }
 
     cv::Mat image = cv_ptr->image;
-    cv::Mat pt_image(image.rows, image.cols, CV_8UC3);
+    // cv::Mat pt_image(image.rows, image.cols, CV_8UC3);
+    cv::Mat pt_image = cv::Mat::zeros(cv::Size(image.rows, image.cols), CV_8UC3);
 
+    // image_buf_ = cv_ptr->image;
+    // std::cout << "image type: " << image.type() << std::endl;
+    cv::Mat temp_img;
+
+    // ######### Incoming PCL filter ################
     std::cout << "cloud size: " << cloud_msg->points.size() << std::endl;
 
     pcl::PassThrough<pcl::PointXYZI> pass;
@@ -116,8 +112,6 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
             left_hist(point.y);
             right_hist(point.y);
         }
-
-        PtTParams t_p;
 
         size_t left_lar_bin {0};
         size_t right_lar_bin {0};
@@ -150,7 +144,6 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
         std::cout << "points in left largest bin : " << left_lar_bin << std::endl;
         std::cout << "points in right largest bin: " << right_lar_bin << std::endl;
 
-
         for (auto& point : *cloud_filtered) {
             if ((point.y >= left_bin_min && point.y <= left_bin_max) || (point.y >= right_bin_min && point.y <= right_bin_max)) {
                 for (double i = -0.856; i < 0.65; i += 0.1) { // -0.856 < 0.29
@@ -160,19 +153,14 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
                     pt.z = i;
                     pt.intensity = point.intensity;
                     appended_cloud->points.push_back(pt);
-                    // global_pcl_->points.push_back(pt);
                     rcs_min = (pt.intensity < rcs_min) ? pt.intensity : rcs_min;
                     rcs_max = (pt.intensity > rcs_max) ? pt.intensity : rcs_max;
                 }
             }
         }
 
-        std::cout << "rcs_max = " << rcs_max << std::endl;
-        std::cout << "rcs_min = " << rcs_min << std::endl;
-
-        std::cout << "new cloud size: " << cloud_filtered->points.size() << std::endl;
+        // ########### Convert PCL to image coordinates ##########################
         for (pcl::PointCloud<pcl::PointXYZI>::const_iterator it = appended_cloud->begin(); it != appended_cloud->end(); it++) {
-        // for (pcl::PointCloud<pcl::PointXYZI>::const_iterator it = global_pcl_->begin(); it != global_pcl_->end(); it++) {
             double tmpxC = (it->y * -1) / it->x;
             double tmpyC = (it->z * -1) / it->x;
             double tmpzC = it->x;
@@ -212,56 +200,86 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
 
             if (planepointsC.y >= 0 and planepointsC.y < height and planepointsC.x >= 0 and planepointsC.x < width and
                 tmpzC >= 0 and std::abs(tmpxC) <= 1.35) {
-                
-                t_p.points_vec.push_back(planepointsC);
-                t_p.range_vec.push_back(range);
 
                 int point_size = 4;
-                cv::circle(image,
+
+                cv::circle(cv_ptr->image,
                     cv::Point(planepointsC.x, planepointsC.y), point_size,
                     CV_RGB(255 * colmap[50-range][0], 255 * colmap[50-range][1], 255 * colmap[50-range][2]), -1);
+
                 cv::circle(pt_image,
                     cv::Point(planepointsC.x, planepointsC.y), point_size,
                     CV_RGB(255 * colmap[50-range][0], 255 * colmap[50-range][1], 255 * colmap[50-range][2]), -1);
             }
+
         }
 
-        if (transform_params_.size() != 0) {
-            Mat lambda(2, 4, CV_32FC1);
-            lambda = featureDetector(image_buf_, cv_ptr->image);
 
-            for (size_t i = 0; i < pt_buf_.size(); i++)
-                cv::warpPerspective(pt_buf_[i], pt_buf_[i], lambda, pt_buf_[i].size());
-        }
+        // ################ Radar to Image to Reprojection ##################
+        
 
-        image_buf_ = cv_ptr->image;
-        transform_params_.push_back(t_p);
-        if (transform_params_.size() > 10)
-            transform_params_.pop_front();
+        // if (transform_params_.size() != 0) {
+        //     Mat lambda(2, 4, CV_32FC1);
+        //     lambda = featureDetector(image_buf_, cv_ptr->image);
 
-        std::cout << "image type: " << image.type() << std::endl;
-        cv::Mat temp_img;
-        // cv::addWeighted(image, 0.5, pt_image, 0.5, 0.0, temp_img);
+        //     for (size_t i = 0; i < pt_buf_.size(); i++)
+        //         cv::warpPerspective(pt_buf_[i], pt_buf_[i], lambda, pt_buf_[i].size());
+        // }
 
+        // image_buf_ = cv_ptr->image;
+        // transform_params_.push_back(t_p);
+        // if (transform_params_.size() > 10)
+        //     transform_params_.pop_front();
+
+        // std::cout << "image type: " << image.type() << std::endl;
+        // cv::Mat temp_img;
+        // // cv::addWeighted(image, 0.5, pt_image, 0.5, 0.0, temp_img);
+
+        // if (pt_buf_.size() != 0) {
+        //     Mat lambda(2, 4, CV_32FC1);
+        //     lambda = featureDetector(image_buf_, cv_ptr->image);
+
+        //     for (size_t i = 0; i < pt_buf_.size(); i++) {
+        //         cv::warpPerspective(pt_buf_[i], pt_buf_[i], lambda, pt_buf_[i].size());
+        //         cv::addWeighted(temp_img, 0.5, pt_buf_[i], 0.5, 0.0, temp_img);
+        //     }
+        // }
+
+        // image_buf_ = cv_ptr->image;
+        // pt_buf_.push_back(pt_image);
+        // if (pt_buf_.size() > 10)
+        //     pt_buf_.pop_front();
+
+        // cv_img_pub = cv_bridge::CvImage(pcl_msg->header, sensor_msgs::image_encodings::RGB8, temp_img);
         if (pt_buf_.size() != 0) {
             Mat lambda(2, 4, CV_32FC1);
+            Mat tmp_img;
             lambda = featureDetector(image_buf_, cv_ptr->image);
+            std::cout << "cv_ptr->image type: " << cv_ptr->image.type() << std::endl;
+            std::cout << "pt_image type: " << pt_image.type() << std::endl;
+
+            // ########### Transform PCL buffer ################################
 
             for (size_t i = 0; i < pt_buf_.size(); i++) {
                 cv::warpPerspective(pt_buf_[i], pt_buf_[i], lambda, pt_buf_[i].size());
-                cv::addWeighted(temp_img, 0.5, pt_buf_[i], 0.5, 0.0, temp_img);
+                std::cout << "pt_buf_[i]: " << pt_buf_[i].type() << std::endl;
+                // add buffered points to image
+                cv::addWeighted(cv_ptr->image, 0.5, pt_buf_[i], 0.5, 0.0,cv_ptr->image);
             }
         }
 
-        image_buf_ = cv_ptr->image;
+        // ########### add pcl_mat to que ##########################
+        image_buf_ = image;
         pt_buf_.push_back(pt_image);
         if (pt_buf_.size() > 10)
             pt_buf_.pop_front();
-
-        cv_img_pub = cv_bridge::CvImage(pcl_msg->header, sensor_msgs::image_encodings::RGB8, temp_img);
     }
 
-    cam_radar_img_pub_.publish(cv_img_pub.toImageMsg());
+
+
+    // ################ Publishers ##########################
+    // cam_radar_img_pub_.publish(cv_img_pub.toImageMsg());
+    cam_radar_img_pub_.publish(cv_ptr->toImageMsg());
 
     sensor_msgs::PointCloud2 pcl_tf;
     tf2::doTransform(*pcl_msg, pcl_tf, tf_radar);
@@ -364,8 +382,8 @@ Reprojection::featureDetector(cv::Mat img_1, cv::Mat img_2)
     lambda = Mat::zeros(img_1.rows, img_1.cols, img_1.type());
 
     for(size_t i = 0; i < good_matches.size(); i++) {
-        img1_pts[0] = Point2f(keypoints_1.at(good_matches[i].queryIdx).pt.x, keypoints_1.at(good_matches[i].queryIdx).pt.y);
-        img2_pts[0] = Point2f(keypoints_2.at(good_matches[i].trainIdx).pt.x, keypoints_2.at(good_matches[i].trainIdx).pt.y);
+        img1_pts[i] = Point2f(keypoints_1.at(good_matches[i].queryIdx).pt.x, keypoints_1.at(good_matches[i].queryIdx).pt.y);
+        img2_pts[i] = Point2f(keypoints_2.at(good_matches[i].trainIdx).pt.x, keypoints_2.at(good_matches[i].trainIdx).pt.y);
     }
 
     lambda = getPerspectiveTransform(img1_pts, img2_pts);

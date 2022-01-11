@@ -7,7 +7,7 @@
     <!-- <arg name="path" default="/media/dd/Samsung_T5/radar-camera_calibration/" /> -->
     <arg name="path" default="/media/dd/Samsung_T5/hastings_villamaria/october/2021-10-07-13-52-right/" />
 	<arg name="bag" default="1-tf_static-removed.bag" />
-	<node pkg="rosbag" type="play" name="player" output="screen" args="--clock $(arg path)$(arg bag)"/>
+	<node pkg="rosbag" type="play" name="player" output="screen" args="--clock $(arg path)$(arg bag) -r 0.1"/>
 
 	<!-- Make sure to double check that camera_info is for the correct camera -->
 	<rosparam file="$(find cam_radar_calibration)/config/camera_info.yaml" /> 

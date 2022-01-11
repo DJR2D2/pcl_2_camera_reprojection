@@ -71,16 +71,38 @@ int main (int argc, char** argv)
     lambda = Mat::zeros(img_1.rows, img_1.cols, img_1.type());
 
     for(size_t i = 0; i < good_matches.size(); i++) {
-        img1_pts[0] = Point2f(keypoints_1.at(good_matches[i].queryIdx).pt.x, keypoints_1.at(good_matches[i].queryIdx).pt.y);
-        img2_pts[0] = Point2f(keypoints_2.at(good_matches[i].trainIdx).pt.x, keypoints_2.at(good_matches[i].trainIdx).pt.y);
+        img1_pts[i] = Point2f(keypoints_1.at(good_matches[i].queryIdx).pt.x, keypoints_1.at(good_matches[i].queryIdx).pt.y);
+        img2_pts[i] = Point2f(keypoints_2.at(good_matches[i].trainIdx).pt.x, keypoints_2.at(good_matches[i].trainIdx).pt.y);
     }
 
     lambda = getPerspectiveTransform(img1_pts, img2_pts);
+    cout << "lambda = " << endl << " " << lambda << endl << endl;
 
     Mat img_match;
     Mat img_goodmatch;
     drawMatches ( img_1, keypoints_1, img_2, keypoints_2, matches, img_match );
     drawMatches ( img_1, keypoints_1, img_2, keypoints_2, good_matches, img_goodmatch );
+
+    uint8_t* pixelPtr = (uint8_t*)img_match.data;
+    int cn = img_match.channels();
+    Scalar_<uint8_t> bgrPixel;
+
+    for(int i = 0; i < img_match.rows; i++)
+    {
+        for(int j = 0; j < img_match.cols; j++)
+        {
+            if ((int)pixelPtr[i*img_match.cols*cn + j*cn + 0] == 0 && (int)pixelPtr[i*img_match.cols*cn + j*cn + 1] == 0 && (int)pixelPtr[i*img_match.cols*cn + j*cn + 2])
+                cout << "pixel is black" << endl;
+            else
+                cout << "pixel is coloured" << endl;
+        }
+    }
+    // for (int i = 0; i < img_match.rows; ++i) {
+    //     uchar *row_ptr = img_match.ptr<uchar>(i);
+    //     for (int j = 0; j < img_match.cols; ++j) {
+    //         std::cout << "pixel value is " << img_match.at<Vec3b>(i, j).val[1] << std::endl;
+    //     }
+    // }
     imshow ( "img_match", img_match );
     imshow ( "img_goodmatch", img_goodmatch );
     waitKey(0);
