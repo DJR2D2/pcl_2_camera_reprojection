@@ -79,8 +79,10 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
     }
 
     cv::Mat image = cv_ptr->image;
+    std::cout << "address of image: " << &image << std::endl;
+    std::cout << "address of cv_ptr->image: " << &cv_ptr->image << std::endl;
     // cv::Mat pt_image(image.rows, image.cols, CV_8UC3);
-    cv::Mat pt_image = cv::Mat::zeros(cv::Size(image.rows, image.cols), CV_8UC3);
+    cv::Mat pt_image = cv::Mat::zeros(cv::Size(image.cols, image.rows), CV_8UC3);
 
     // image_buf_ = cv_ptr->image;
     // std::cout << "image type: " << image.type() << std::endl;
@@ -159,6 +161,8 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
             }
         }
 
+        std::vector<cv::Point2f> local_pt_buf;
+
         // ########### Convert PCL to image coordinates ##########################
         for (pcl::PointCloud<pcl::PointXYZI>::const_iterator it = appended_cloud->begin(); it != appended_cloud->end(); it++) {
             double tmpxC = (it->y * -1) / it->x;
@@ -174,7 +178,7 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
 
 
             int range = std::min(round((abs(it->intensity) / abs(rcs_max - rcs_min)) * 49), 49.0);
-            std::cout << "range = " << range << std::endl;
+            // std::cout << "range = " << range << std::endl;
 
             // Applying the distortion
             double r2 = tmpxC * tmpxC + tmpyC * tmpyC;
@@ -203,79 +207,63 @@ Reprojection::syncCallback(const ImgConstPtr &img_msg, const PclConstPtr &pcl_ms
 
                 int point_size = 4;
 
+                local_pt_buf.push_back(Point2f(planepointsC.x, planepointsC.y));
+
                 cv::circle(cv_ptr->image,
                     cv::Point(planepointsC.x, planepointsC.y), point_size,
-                    CV_RGB(255 * colmap[50-range][0], 255 * colmap[50-range][1], 255 * colmap[50-range][2]), -1);
+                    CV_RGB(245, 218, 66), -1);
 
-                cv::circle(pt_image,
-                    cv::Point(planepointsC.x, planepointsC.y), point_size,
-                    CV_RGB(255 * colmap[50-range][0], 255 * colmap[50-range][1], 255 * colmap[50-range][2]), -1);
+                // cv::circle(pt_image,
+                //     cv::Point(planepointsC.x, planepointsC.y), point_size,
+                //     CV_RGB(245, 23, 23), -1);
             }
 
         }
+        
+
+        // if (pt_buf_.size() != 0) {
+        //     Mat lambda(2, 4, CV_32FC1);
+        //     Mat tmp_img;
+        //     lambda = featureDetector(image_buf_, cv_ptr->image);
+        //     std::cout << "lambda: " << lambda << std::endl;
+        //     for (size_t i = 0; i < pt_buf_.size(); i++) {
+        //         for (size_t j = 0; j < pt_buf_[i].size(); j++) {
+        //             cv::Mat_<double> src(3/*rows*/,1 /* cols */); 
+
+        //             src(0,0)=pt_buf_[i][j].x; 
+        //             src(1,0)=pt_buf_[i][j].y; 
+        //             src(2,0)=1.0; 
+
+        //             cv::Mat_<double> dst = lambda*src; //USE MATRIX ALGEBRA
+        //             pt_buf_[i][j] = cv::Point2f(dst(0,0), dst(1,0));
+
+        //             cv::circle(cv_ptr->image,
+        //                 cv::Point(pt_buf_[i][j].x, pt_buf_[i][j].y), 4.0,
+        //                 CV_RGB(245, 218, 66), -1);
+
+        //             // std::cout << "input" << i << " : " << pt_buf_[i][i] << std::endl;
+        //             // std::cout << "output" << i << ": " << cv::Point2f(dst(0,0), dst(1,0)) << std::endl;
+
+        //     }
+        //         // cv::warpPerspective(img_buf_[i], img_buf_[i], lambda, img_buf_[i].size());
+        //         // addWeighted(image, 1.0, img_buf_[i], 1.0, 0.0, image);
+        //     }
+        // }
 
 
         // ################ Radar to Image to Reprojection ##################
         
 
-        // if (transform_params_.size() != 0) {
-        //     Mat lambda(2, 4, CV_32FC1);
-        //     lambda = featureDetector(image_buf_, cv_ptr->image);
+        // ########### Transform PCL buffer ################################
 
-        //     for (size_t i = 0; i < pt_buf_.size(); i++)
-        //         cv::warpPerspective(pt_buf_[i], pt_buf_[i], lambda, pt_buf_[i].size());
-        // }
 
-        // image_buf_ = cv_ptr->image;
-        // transform_params_.push_back(t_p);
-        // if (transform_params_.size() > 10)
-        //     transform_params_.pop_front();
-
-        // std::cout << "image type: " << image.type() << std::endl;
-        // cv::Mat temp_img;
-        // // cv::addWeighted(image, 0.5, pt_image, 0.5, 0.0, temp_img);
-
-        // if (pt_buf_.size() != 0) {
-        //     Mat lambda(2, 4, CV_32FC1);
-        //     lambda = featureDetector(image_buf_, cv_ptr->image);
-
-        //     for (size_t i = 0; i < pt_buf_.size(); i++) {
-        //         cv::warpPerspective(pt_buf_[i], pt_buf_[i], lambda, pt_buf_[i].size());
-        //         cv::addWeighted(temp_img, 0.5, pt_buf_[i], 0.5, 0.0, temp_img);
-        //     }
-        // }
-
-        // image_buf_ = cv_ptr->image;
-        // pt_buf_.push_back(pt_image);
-        // if (pt_buf_.size() > 10)
-        //     pt_buf_.pop_front();
-
-        // cv_img_pub = cv_bridge::CvImage(pcl_msg->header, sensor_msgs::image_encodings::RGB8, temp_img);
-        if (pt_buf_.size() != 0) {
-            Mat lambda(2, 4, CV_32FC1);
-            Mat tmp_img;
-            lambda = featureDetector(image_buf_, cv_ptr->image);
-            std::cout << "cv_ptr->image type: " << cv_ptr->image.type() << std::endl;
-            std::cout << "pt_image type: " << pt_image.type() << std::endl;
-
-            // ########### Transform PCL buffer ################################
-
-            for (size_t i = 0; i < pt_buf_.size(); i++) {
-                cv::warpPerspective(pt_buf_[i], pt_buf_[i], lambda, pt_buf_[i].size());
-                std::cout << "pt_buf_[i]: " << pt_buf_[i].type() << std::endl;
-                // add buffered points to image
-                cv::addWeighted(cv_ptr->image, 0.5, pt_buf_[i], 0.5, 0.0,cv_ptr->image);
-            }
-        }
 
         // ########### add pcl_mat to que ##########################
         image_buf_ = image;
-        pt_buf_.push_back(pt_image);
+        pt_buf_.push_back(local_pt_buf);
         if (pt_buf_.size() > 10)
             pt_buf_.pop_front();
     }
-
-
 
     // ################ Publishers ##########################
     // cam_radar_img_pub_.publish(cv_img_pub.toImageMsg());
@@ -375,18 +363,57 @@ Reprojection::featureDetector(cv::Mat img_1, cv::Mat img_2)
         }
     }
 
+    // Point2f img1_pts[good_matches.size()];
+    // Point2f img2_pts[good_matches.size()];
+
+    // Mat lambda(2, 4, CV_32FC1);
+    // lambda = Mat::zeros(img_1.rows, img_1.cols, img_1.type());
+
+    // for(size_t i = 0; i < good_matches.size(); i++) {
+    //     img1_pts[i] = Point2f(keypoints_1.at(good_matches[i].queryIdx).pt.x, keypoints_1.at(good_matches[i].queryIdx).pt.y);
+    //     img2_pts[i] = Point2f(keypoints_2.at(good_matches[i].trainIdx).pt.x, keypoints_2.at(good_matches[i].trainIdx).pt.y);
+    // }
+
+    // lambda = getPerspectiveTransform(img1_pts, img2_pts);
+
     Point2f img1_pts[good_matches.size()];
     Point2f img2_pts[good_matches.size()];
 
     Mat lambda(2, 4, CV_32FC1);
     lambda = Mat::zeros(img_1.rows, img_1.cols, img_1.type());
 
+    std::vector<cv::Point2f> yourPoints1;
+    std::vector<cv::Point2f> yourPoints2;
+    cv::Mat pt_img1 = cv::Mat::zeros(cv::Size(img_1.cols, img_1.rows), CV_8UC3);
+    cv::Mat pt_img2 = cv::Mat::zeros(cv::Size(img_1.cols, img_1.rows), CV_8UC3);
+
+
     for(size_t i = 0; i < good_matches.size(); i++) {
-        img1_pts[i] = Point2f(keypoints_1.at(good_matches[i].queryIdx).pt.x, keypoints_1.at(good_matches[i].queryIdx).pt.y);
-        img2_pts[i] = Point2f(keypoints_2.at(good_matches[i].trainIdx).pt.x, keypoints_2.at(good_matches[i].trainIdx).pt.y);
+        yourPoints1.push_back(Point2f(keypoints_1.at(good_matches[i].queryIdx).pt.x, keypoints_1.at(good_matches[i].queryIdx).pt.y));
+        yourPoints2.push_back(Point2f(keypoints_2.at(good_matches[i].trainIdx).pt.x, keypoints_2.at(good_matches[i].trainIdx).pt.y));
     }
 
-    lambda = getPerspectiveTransform(img1_pts, img2_pts);
+    lambda = findHomography(yourPoints1, yourPoints2, RANSAC, 9.0);
+    // Mat dst_mat = Mat::zeros(img_1.rows, img_1.cols, img_1.type());
+    // cout << "lambda = " << endl << " " << lambda << endl << endl;
+
+    // for (size_t i = 0; i < yourPoints1.size(); i++) {
+    //     cv::Mat_<double> src(3/*rows*/,1 /* cols */); 
+
+    //     src(0,0)=yourPoints1[i].x; 
+    //     src(1,0)=yourPoints1[i].y; 
+    //     src(2,0)=1.0; 
+
+    //     cv::Mat_<double> dst = lambda*src; //USE MATRIX ALGEBRA
+    //     // yourPoints1[i] = cv::Point2f(dst(0,0), dst(1,0));
+
+    //     std::cout << "input" << i << " : " << yourPoints1[i] << std::endl;
+    //     std::cout << "output" << i << ": " << cv::Point2f(dst(0,0), dst(1,0)) << std::endl;
+
+    //     cv::circle(img_2,
+    //                 cv::Point(cv::Point2f(dst(0,0), dst(1,0))), 3,
+    //                 CV_RGB(245, 23, 23), -1);
+    // }
 
     Mat img_match;
     Mat img_goodmatch;

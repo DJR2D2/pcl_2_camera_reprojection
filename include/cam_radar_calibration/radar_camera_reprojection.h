@@ -182,7 +182,8 @@ private:
     std::deque<pcl::PointCloud<pcl::PointXYZI>> pcl_buf_;
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr global_pcl_;
-    std::deque<cv::Mat> pt_buf_;
+    std::deque<cv::Mat> img_buf_;
+    std::deque<std::vector<cv::Point2f>> pt_buf_;
     cv::Mat image_buf_;
 
     std::string distortion_model;
