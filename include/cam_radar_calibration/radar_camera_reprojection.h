@@ -56,6 +56,8 @@
 #include <boost/histogram.hpp>
 #include <boost/format.hpp>
 
+#include <pcl/filters/voxel_grid.h>
+
 using namespace boost::histogram;
 using namespace std;
 using namespace cv;
